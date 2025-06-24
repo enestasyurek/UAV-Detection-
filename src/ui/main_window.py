@@ -18,8 +18,14 @@ from typing import Optional, Dict, List
 from detection import YOLODetector, FastDroneDetector, EDGSYOLOv8Detector
 from tracking import ByteTracker, DeepSortTracker, OCSortTracker, QuickUAVOCSortTracker, DroneSpecificTracker
 from preprocessing import ImageEnhancer, CameraMode
+from config_manager import ConfigManager
+from auto_preset_manager import AutoPresetManager
+from tracking_state_manager import TrackingStateManager, TrackingState
 # Loglama için logging modülünü içe aktar
 import logging
+# JSON ve dosya işlemleri için gerekli modüller
+import json
+import os
 
 # Logger oluştur
 logger = logging.getLogger(__name__)
@@ -140,6 +146,21 @@ class DroneTrackingApp:
         
         self.tracker = None
         self.enhancer = ImageEnhancer()
+        
+        # Konfigürasyon yöneticisi
+        self.config_manager = ConfigManager()
+        
+        # Otomatik preset yöneticisi
+        self.auto_preset_manager = AutoPresetManager(self.config_manager)
+        
+        # Takip durumu yöneticisi
+        self.tracking_state_manager = TrackingStateManager(self.auto_preset_manager)
+        
+        # Managers'ı birbirine bağla
+        self.auto_preset_manager.set_tracking_state_manager(self.tracking_state_manager)
+        
+        # Takip durumu değişikliği callback'i ekle
+        self.tracking_state_manager.add_state_change_callback(self._on_tracking_state_change)
         
         # Takip algoritması seçimi (varsayılan olarak Drone-Specific Tracker)
         self.tracker_type = tk.StringVar(value="Drone-Specific")
@@ -342,6 +363,40 @@ class DroneTrackingApp:
             command=self._update_detector_settings
         ).grid(row=18, column=0, sticky="w", pady=2)
         
+        # Ayırıcı
+        ttk.Separator(control_frame, orient="horizontal").grid(row=19, column=0, sticky="ew", pady=10)
+        
+        # Hızlı Ayarlar
+        ttk.Label(control_frame, text="Hızlı Ayarlar:").grid(row=20, column=0, sticky="w", pady=5)
+        
+        # Hızlı ayarlar combobox
+        self.quick_preset = tk.StringVar(value="Dengeli")
+        quick_preset_combo = ttk.Combobox(
+            control_frame,
+            textvariable=self.quick_preset,
+            values=["Düşük Çözünürlük - Uzak Mesafe", "Yüksek Çözünürlük - Yakın Mesafe", 
+                   "Gece Görüş", "Gündüz Görüş", "Dengeli", "Hız Odaklı"],
+            state="readonly"
+        )
+        quick_preset_combo.grid(row=21, column=0, sticky="ew", pady=5)
+        quick_preset_combo.bind("<<ComboboxSelected>>", self._apply_quick_preset)
+        
+        # Hızlı ayar uygula butonu
+        ttk.Button(
+            control_frame,
+            text="Hızlı Ayarı Uygula",
+            command=self._apply_quick_preset_manual
+        ).grid(row=22, column=0, sticky="ew", pady=5)
+        
+        # Otomatik ayar modu
+        self.auto_preset_mode = tk.BooleanVar(value=True)
+        ttk.Checkbutton(
+            control_frame,
+            text="Otomatik Ayar (Drone Tespitinde)",
+            variable=self.auto_preset_mode,
+            command=self._toggle_auto_preset_mode
+        ).grid(row=23, column=0, sticky="w", pady=5)
+        
     def _create_video_panel(self, parent):
         """Video panelini oluştur"""
         # Video çerçevesi
@@ -412,6 +467,11 @@ class DroneTrackingApp:
         info_frame = ttk.LabelFrame(parent, text="İstatistikler", padding=10)
         info_frame.grid(row=0, column=2, sticky="nsew", padx=(10, 0))
         
+        # Takip durumu göstergesi ekle
+        ttk.Label(info_frame, text="Takip Durumu:", font=("Arial", 10, "bold")).grid(row=0, column=0, sticky="w", pady=5)
+        self.tracking_state_label = ttk.Label(info_frame, text="Bekleniyor", font=("Arial", 10))
+        self.tracking_state_label.grid(row=0, column=1, sticky="e", pady=5)
+        
         # Font ayarları - macOS için optimize edilmiş
         if self.is_mac:
             label_font = ("SF Pro Text", 12)
@@ -421,29 +481,34 @@ class DroneTrackingApp:
             value_font = ("Arial", 14, "bold")
         
         # FPS göstergesi
-        ttk.Label(info_frame, text="FPS:", font=label_font).grid(row=0, column=0, sticky="w", pady=5)
+        ttk.Label(info_frame, text="FPS:", font=label_font).grid(row=1, column=0, sticky="w", pady=5)
         self.fps_label = ttk.Label(info_frame, text="0", font=value_font)
-        self.fps_label.grid(row=0, column=1, sticky="e", pady=5)
+        self.fps_label.grid(row=1, column=1, sticky="e", pady=5)
         
         # Tespit sayısı
-        ttk.Label(info_frame, text="Tespitler:", font=label_font).grid(row=1, column=0, sticky="w", pady=5)
+        ttk.Label(info_frame, text="Tespitler:", font=label_font).grid(row=2, column=0, sticky="w", pady=5)
         self.detection_label = ttk.Label(info_frame, text="0", font=value_font)
-        self.detection_label.grid(row=1, column=1, sticky="e", pady=5)
+        self.detection_label.grid(row=2, column=1, sticky="e", pady=5)
         
         # Takip sayısı
-        ttk.Label(info_frame, text="Aktif Takipler:", font=label_font).grid(row=2, column=0, sticky="w", pady=5)
+        ttk.Label(info_frame, text="Aktif Takipler:", font=label_font).grid(row=3, column=0, sticky="w", pady=5)
         self.track_label = ttk.Label(info_frame, text="0", font=value_font)
-        self.track_label.grid(row=2, column=1, sticky="e", pady=5)
+        self.track_label.grid(row=3, column=1, sticky="e", pady=5)
+        
+        # Takip kalitesi
+        ttk.Label(info_frame, text="Takip Kalitesi:", font=label_font).grid(row=4, column=0, sticky="w", pady=5)
+        self.tracking_quality_label = ttk.Label(info_frame, text="%0", font=value_font)
+        self.tracking_quality_label.grid(row=4, column=1, sticky="e", pady=5)
         
         # Ayırıcı
-        ttk.Separator(info_frame, orient="horizontal").grid(row=3, column=0, columnspan=2, sticky="ew", pady=10)
+        ttk.Separator(info_frame, orient="horizontal").grid(row=5, column=0, columnspan=2, sticky="ew", pady=10)
         
         # Tespit listesi
-        ttk.Label(info_frame, text="Tespit Edilen Nesneler:").grid(row=4, column=0, columnspan=2, sticky="w", pady=5)
+        ttk.Label(info_frame, text="Tespit Edilen Nesneler:").grid(row=6, column=0, columnspan=2, sticky="w", pady=5)
         
         # Treeview için çerçeve
         tree_frame = ttk.Frame(info_frame)
-        tree_frame.grid(row=5, column=0, columnspan=2, sticky="nsew", pady=5)
+        tree_frame.grid(row=7, column=0, columnspan=2, sticky="nsew", pady=5)
         
         # Scrollbar
         scrollbar = ttk.Scrollbar(tree_frame)
@@ -486,7 +551,7 @@ class DroneTrackingApp:
         scrollbar.config(command=self.detection_tree.yview)
         
         # Grid ağırlıkları
-        info_frame.grid_rowconfigure(5, weight=1)
+        info_frame.grid_rowconfigure(7, weight=1)
         
     def _create_status_bar(self):
         """Durum çubuğunu oluştur"""
@@ -613,7 +678,12 @@ class DroneTrackingApp:
         self.is_running = True
         self.start_button.config(state="disabled")
         self.stop_button.config(state="normal")
-        self.status_label.config(text="Takip başlatıldı...")
+        
+        # Otomatik preset durumunu güncelle
+        if self.auto_preset_mode.get():
+            self.status_label.config(text="Takip başlatıldı... Drone tespiti bekleniyor (Otomatik ayar aktif)")
+        else:
+            self.status_label.config(text="Takip başlatıldı...")
         
         # İşlem thread'ini başlat
         self.process_thread = threading.Thread(target=self._process_video)
@@ -631,6 +701,12 @@ class DroneTrackingApp:
         if self.video_capture:
             self.video_capture.release()
             self.video_capture = None
+        
+        # Otomatik preset yöneticisini sıfırla
+        self.auto_preset_manager.reset()
+        
+        # Takip durumu yöneticisini sıfırla
+        self.tracking_state_manager.reset()
             
         # Takip geçmişini temizle
         if hasattr(self, 'track_histories'):
@@ -680,6 +756,26 @@ class DroneTrackingApp:
             # Hızlı tespit - güven eşiğini güncelle
             self.detector.confidence_threshold = self.confidence_var.get()
             detections = self.detector.detect(frame)
+            
+            # Otomatik preset kontrolü ve takip durumu güncellemesi
+            if self.auto_preset_mode.get():
+                # Tracking state manager ile işle
+                tracking_info = self.tracking_state_manager.process_detections(
+                    detections, frame.shape, time.time()
+                )
+                
+                # Preset önerisi varsa uygula
+                if tracking_info.get('recommended_preset'):
+                    preset_name = self._get_preset_display_name(tracking_info['recommended_preset'])
+                    if preset_name:
+                        self.root.after(0, self._apply_auto_preset, preset_name)
+                
+                # Güven eşiği ayarlaması
+                if tracking_info.get('confidence_adjustment'):
+                    new_confidence = max(0.05, min(0.8, 
+                        self.confidence_var.get() + tracking_info['confidence_adjustment']))
+                    self.confidence_var.set(new_confidence)
+                    self._update_confidence(new_confidence)
             
             # Takip devamlılığı için iyileştirme
             if not detections:
@@ -1070,6 +1166,223 @@ class DroneTrackingApp:
                 self.detector.scales = [1.0]
                 
             logger.info(f"Detector settings updated - EDGS: {self.detector.enable_edgs}, Multi-scale: {self.detector.multi_scale}")
+    
+    def _load_quick_presets(self):
+        """Hızlı ayar presetlerini yükle - ConfigManager'ı kullan"""
+        return self.config_manager.get_all_presets()
+    
+    def _apply_quick_preset(self, event=None):
+        """Seçilen hızlı ayarı uygula"""
+        preset_name = self.quick_preset.get()
+        self._apply_preset_by_name(preset_name)
+    
+    def _apply_quick_preset_manual(self):
+        """Manual butona basıldığında hızlı ayarı uygula"""
+        preset_name = self.quick_preset.get()
+        self._apply_preset_by_name(preset_name)
+    
+    def _apply_preset_by_name(self, preset_name, show_message=True):
+        """İsimle preset uygula"""
+        presets = self._load_quick_presets()
+        if not presets:
+            if show_message:
+                messagebox.showerror("Hata", "Preset dosyası yüklenemedi!")
+            return
+            
+        # Preset name mapping
+        preset_mapping = {
+            "Düşük Çözünürlük - Uzak Mesafe": "low_res_far",
+            "Yüksek Çözünürlük - Yakın Mesafe": "high_res_near", 
+            "Gece Görüş": "night_vision",
+            "Gündüz Görüş": "day_vision",
+            "Dengeli": "balanced",
+            "Hız Odaklı": "speed_optimized"
+        }
+        
+        preset_key = preset_mapping.get(preset_name)
+        if not preset_key or preset_key not in presets:
+            if show_message:
+                messagebox.showerror("Hata", f"Preset bulunamadı: {preset_name}")
+            return
+            
+        preset = presets[preset_key]
+        
+        try:
+            # UI ayarlarını güncelle
+            detection_settings = preset.get('detection', {})
+            tracking_settings = preset.get('tracking', {})
+            preprocessing_settings = preset.get('preprocessing', {})
+            
+            # Confidence threshold
+            if 'confidence_threshold' in detection_settings:
+                self.confidence_var.set(detection_settings['confidence_threshold'])
+                self._update_confidence(detection_settings['confidence_threshold'])
+            
+            # EDGS setting
+            if 'enable_edgs' in detection_settings:
+                self.enable_edgs.set(detection_settings['enable_edgs'])
+            
+            # Multi-scale setting  
+            if 'multi_scale' in detection_settings:
+                self.enable_multiscale.set(detection_settings['multi_scale'])
+            
+            # Tracking algorithm
+            if 'algorithm' in tracking_settings:
+                algorithm_mapping = {
+                    "DroneSpecificTracker": "Drone-Specific",
+                    "QuickUAVOCSortTracker": "Quick-UAV OC-SORT", 
+                    "ByteTracker": "ByteTrack",
+                    "DeepSortTracker": "DeepSORT",
+                    "OCSortTracker": "OC-SORT",
+                    "FastDroneDetector": "Drone-Specific"  # Fallback
+                }
+                algo_name = algorithm_mapping.get(tracking_settings['algorithm'], "Drone-Specific")
+                self.tracker_type.set(algo_name)
+                self._init_tracker()
+            
+            # Camera mode based on preset
+            if preset_key == "night_vision":
+                self.camera_mode.set("NIGHT")
+            elif preset_key == "day_vision":
+                self.camera_mode.set("DAY")
+            else:
+                self.camera_mode.set("AUTO")
+            
+            # Enhancement based on preprocessing
+            if 'enhance_contrast' in preprocessing_settings:
+                self.enhance_image.set(preprocessing_settings['enhance_contrast'])
+            
+            # Update detector settings
+            self._update_detector_settings()
+            
+            # ConfigManager ile gelişmiş ayarları uygula
+            success = True
+            
+            # Detector'e preset uygula
+            if hasattr(self, 'detector') and self.detector:
+                if not self.config_manager.apply_preset_to_detector(self.detector, preset_key):
+                    success = False
+                    logger.warning("Detector preset uygulanamadı")
+            
+            # Tracker'e preset uygula  
+            if hasattr(self, 'tracker') and self.tracker:
+                if not self.config_manager.apply_preset_to_tracker(self.tracker, preset_key):
+                    success = False
+                    logger.warning("Tracker preset uygulanamadı")
+            
+            # Preprocessor'e preset uygula
+            if hasattr(self, 'enhancer') and self.enhancer:
+                if not self.config_manager.apply_preset_to_preprocessor(self.enhancer, preset_key):
+                    success = False
+                    logger.warning("Preprocessor preset uygulanamadı")
+            
+            # Log the applied preset
+            logger.info(f"Hızlı ayar uygulandı: {preset_name}")
+            
+            if show_message:
+                if success:
+                    messagebox.showinfo("Başarılı", f"'{preset_name}' ayarları tamamen uygulandı!")
+                else:
+                    messagebox.showwarning("Uyarı", f"'{preset_name}' ayarları kısmen uygulandı. Detaylar için log'lara bakın.")
+            
+        except Exception as e:
+            logger.error(f"Preset uygulanırken hata: {e}")
+            if show_message:
+                messagebox.showerror("Hata", f"Preset uygulanırken hata oluştu: {str(e)}")
+    
+    def _toggle_auto_preset_mode(self):
+        """Otomatik preset modunu aç/kapa"""
+        enabled = self.auto_preset_mode.get()
+        self.auto_preset_manager.enable_auto_mode(enabled)
+        logger.info(f"Otomatik preset modu: {'Açık' if enabled else 'Kapalı'}")
+        
+        # Durum çubuğunu güncelle
+        if enabled:
+            self.status_label.config(text="Otomatik preset modu aktif - Drone tespitinde optimal ayarlar uygulanacak")
+        else:
+            self.status_label.config(text="Otomatik preset modu kapalı")
+    
+    def _apply_auto_preset(self, preset_name: str):
+        """Otomatik preset uygula"""
+        try:
+            # UI'da preset'i göster
+            self.quick_preset.set(preset_name)
+            
+            # Preset'i uygula (mesajsız)
+            self._apply_preset_by_name(preset_name, show_message=False)
+            
+            # Durum çubuğunu güncelle
+            self.status_label.config(text=f"Otomatik preset uygulandı: {preset_name}")
+            
+        except Exception as e:
+            logger.error(f"Otomatik preset uygulama hatası: {e}")
+    
+    def _get_preset_display_name(self, preset_key: str) -> Optional[str]:
+        """Preset key'den görüntüleme adını al"""
+        preset_name_mapping = {
+            "low_res_far": "Düşük Çözünürlük - Uzak Mesafe",
+            "high_res_near": "Yüksek Çözünürlük - Yakın Mesafe",
+            "night_vision": "Gece Görüş",
+            "day_vision": "Gündüz Görüş",
+            "balanced": "Dengeli",
+            "speed_optimized": "Hız Odaklı"
+        }
+        return preset_name_mapping.get(preset_key)
+    
+    def _on_tracking_state_change(self, old_state: TrackingState, new_state: TrackingState):
+        """Takip durumu değişikliği callback'i"""
+        # Durum mesajları
+        state_messages = {
+            TrackingState.NO_DETECTION: "Drone tespiti bekleniyor...",
+            TrackingState.FIRST_DETECTION: "İLK DRONE TESPİTİ! Takip başlatılıyor...",
+            TrackingState.TRACKING_STABLE: "Drone kararlı takipte ✓",
+            TrackingState.TRACKING_UNSTABLE: "Takip kararsız - Optimizasyon yapılıyor...",
+            TrackingState.TRACKING_LOST: "Takip kaybedildi! Arama modu...",
+            TrackingState.TRACKING_RECOVERED: "Takip geri kazanıldı!"
+        }
+        
+        message = state_messages.get(new_state, "Takip durumu güncellendi")
+        
+        # UI güncellemelerini main thread'de yap
+        self.root.after(0, self._update_tracking_state_ui, message, new_state)
+    
+    def _update_tracking_state_ui(self, message: str, state: TrackingState):
+        """Takip durumu UI güncellemesi"""
+        try:
+            # Durum çubuğunu güncelle
+            self.status_label.config(text=message)
+            
+            # Takip durumu etiketini güncelle
+            state_display = {
+                TrackingState.NO_DETECTION: "Bekleniyor",
+                TrackingState.FIRST_DETECTION: "İlk Tespit",
+                TrackingState.TRACKING_STABLE: "Kararlı",
+                TrackingState.TRACKING_UNSTABLE: "Kararsız",
+                TrackingState.TRACKING_LOST: "Kayıp",
+                TrackingState.TRACKING_RECOVERED: "Kurtarıldı"
+            }
+            self.tracking_state_label.config(text=state_display.get(state, "Bilinmiyor"))
+            
+            # Duruma göre renk ayarla
+            if state == TrackingState.TRACKING_STABLE:
+                self.status_label.config(foreground="green")
+                self.tracking_state_label.config(foreground="green")
+            elif state in [TrackingState.TRACKING_UNSTABLE, TrackingState.TRACKING_LOST]:
+                self.status_label.config(foreground="red")
+                self.tracking_state_label.config(foreground="red")
+            elif state == TrackingState.FIRST_DETECTION:
+                self.status_label.config(foreground="blue")
+                self.tracking_state_label.config(foreground="blue")
+            else:
+                self.status_label.config(foreground="black")
+                self.tracking_state_label.config(foreground="black")
+            
+            # Takip kalitesini güncelle
+            quality = self.tracking_state_manager.get_tracking_quality()
+            self.tracking_quality_label.config(text=f"%{int(quality * 100)}")
+                
+        except Exception as e:
+            logger.error(f"UI güncelleme hatası: {e}")
         
     def _save_results(self):
         """Sonuçları kaydet"""
