@@ -33,17 +33,22 @@ pip install -r requirements.txt
 
 **Windows:**
 ```bash
-run.bat
+run_windows.bat
 ```
 
 **Linux:**
 ```bash
-./run.sh
+./run_linux.sh
 ```
 
 **macOS:**
 ```bash
 ./run_mac.sh
+```
+
+**Genel (eski):**
+```bash
+./run.sh
 ```
 
 ### Performans İpuçları:
