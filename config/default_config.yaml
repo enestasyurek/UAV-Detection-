@@ -1,0 +1,136 @@
+# Drone Tespit ve Takip Sistemi Yapılandırma Dosyası
+
+# YOLO Tespit Ayarları
+detection:
+  model_path: null  # Özel model yolu (null ise varsayılan yolo11n.pt kullanılır)
+  confidence_threshold: 0.3  # Tespit güven eşiği (drone'lar için düşük)
+  nms_threshold: 0.4  # Non-Maximum Suppression eşiği (drone'lar için düşük)
+  max_detections: 100  # Maksimum tespit sayısı
+  
+  # Drone benzeri sınıflar (COCO dataset için)
+  drone_classes:
+    - airplane
+    - bird
+    - kite
+    
+  # Özel model sınıfları
+  custom_classes:
+    - drone
+    - uav
+    - quadcopter
+
+# Takip Algoritmaları Ayarları
+tracking:
+  # ByteTrack ayarları
+  bytetrack:
+    track_thresh: 0.5  # Yüksek güven skoru eşiği
+    track_buffer: 30  # Takip tamponu (frame)
+    match_thresh: 0.8  # Eşleştirme eşiği
+    min_box_area: 100  # Minimum kutu alanı
+    
+  # DeepSORT ayarları
+  deepsort:
+    max_dist: 0.2  # Maksimum kosinus mesafesi
+    min_confidence: 0.3  # Minimum güven skoru
+    max_iou_distance: 0.7  # Maksimum IoU mesafesi
+    max_age: 30  # Maksimum takip yaşı
+    n_init: 3  # Onaylanmış takip için minimum görülme
+    feature_dim: 128  # Özellik vektör boyutu
+    
+  # OC-SORT ayarları
+  ocsort:
+    det_thresh: 0.2  # Tespit eşiği
+    max_age: 30  # Maksimum kayıp frame
+    min_hits: 3  # Minimum onay için görülme
+    iou_threshold: 0.3  # IoU eşiği
+    delta_t: 3  # Hız hesaplama frame aralığı
+    use_byte: true  # ByteTrack benzeri düşük skor kullanımı
+    
+  # Quick-UAV OC-SORT ayarları (Drone'lar için optimize)
+  quick_uav_ocsort:
+    det_thresh: 0.25  # Düşük tespit eşiği
+    max_age: 60  # Uzun takip süresi
+    min_hits: 2  # Hızlı onay
+    iou_threshold: 0.15  # Esnek IoU eşiği
+    delta_t: 3  # Hız hesaplama frame aralığı
+    use_byte: true  # ByteTrack kullan
+    altitude_aware: true  # İrtifa tahmini
+    motion_prediction: true  # Gelişmiş hareket tahmini
+    small_object_threshold: 500  # Küçük nesne eşiği
+    fast_motion_threshold: 50  # Hızlı hareket eşiği (piksel/frame)
+    hover_threshold: 3  # Hovering tespiti eşiği
+    adaptive_iou: true  # Adaptif IoU eşiği
+    adaptive_age: true  # Adaptif yaş yönetimi
+
+# Görüntü İyileştirme Ayarları
+preprocessing:
+  # Gece/Gündüz tespiti
+  brightness_threshold: 60  # Gece/gündüz ayırma eşiği
+  
+  # CLAHE (Contrast Limited Adaptive Histogram Equalization)
+  clahe_clip_limit: 2.0
+  clahe_tile_size: [8, 8]
+  
+  # Gece görüntü iyileştirme
+  night:
+    gamma: 1.5  # Gamma düzeltme değeri
+    denoise_strength: 10  # Gürültü azaltma gücü
+    sharpen_strength: 0.5  # Keskinleştirme gücü
+    
+  # Gündüz görüntü iyileştirme
+  day:
+    sharpen_strength: 0.3  # Keskinleştirme gücü
+    saturation_factor: 1.1  # Renk doygunluğu faktörü
+    highlight_threshold: 200  # Parlak alan eşiği
+
+# Video İşleme Ayarları
+video:
+  fps: 30  # Hedef FPS
+  buffer_size: 10  # Frame tamponu boyutu
+  skip_frames: 0  # Atlanacak frame sayısı
+  
+  # Video kayıt ayarları
+  output:
+    codec: mp4v  # Video codec
+    quality: 80  # Kalite (0-100)
+    save_tracks: true  # Takip bilgilerini kaydet
+
+# UI Ayarları
+ui:
+  window_size: [1400, 800]  # Pencere boyutu
+  theme: clam  # Tkinter teması
+  
+  # Görüntüleme ayarları
+  display:
+    show_fps: true  # FPS göster
+    show_detections: true  # Tespitleri göster
+    show_tracks: true  # Takip çizgilerini göster
+    show_confidence: true  # Güven skorlarını göster
+    track_history_length: 30  # Takip geçmişi uzunluğu
+    
+  # Renkler (BGR formatında)
+  colors:
+    detection_box: [0, 255, 0]  # Yeşil
+    track_line: [255, 0, 0]  # Mavi
+    text: [0, 0, 0]  # Siyah
+    text_background: [0, 255, 0]  # Yeşil
+
+# Loglama Ayarları
+logging:
+  level: INFO  # Log seviyesi (DEBUG, INFO, WARNING, ERROR)
+  file: drone_tracking.log  # Log dosyası
+  max_size: 10485760  # Maksimum dosya boyutu (10MB)
+  backup_count: 5  # Yedek dosya sayısı
+  
+# Performans Ayarları
+performance:
+  use_gpu: true  # GPU kullan (varsa)
+  num_threads: 4  # İşlemci thread sayısı
+  batch_size: 1  # Toplu işlem boyutu
+  
+# Veri Kayıt Ayarları  
+data:
+  save_detections: true  # Tespitleri kaydet
+  save_tracks: true  # Takipleri kaydet
+  output_format: json  # Çıktı formatı (json, csv)
+  output_dir: data/outputs  # Çıktı dizini
