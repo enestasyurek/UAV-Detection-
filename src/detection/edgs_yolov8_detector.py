@@ -67,7 +67,7 @@ class EDGSYOLOv8Detector:
     
     def __init__(self, 
                  model_path: Optional[str] = None,
-                 confidence_threshold: float = 0.25,  # Dengeli eşik - %25
+                 confidence_threshold: float = 0.35,  # Optimize edilmiş eşik - %35
                  use_gpu: bool = True,
                  enable_edgs: bool = True,
                  multi_scale: bool = False):
@@ -121,8 +121,12 @@ class EDGSYOLOv8Detector:
         self.use_background_subtraction = True  # Arka plan çıkarma aktif
         self.bg_subtractor = BackgroundSubtractor()
         
-        # Çoklu ölçek parametreleri - performans için sınırlı
-        self.scales = [0.75, 1.0] if multi_scale else [1.0]
+        # Çoklu ölçek parametreleri - uzak drone'lar için genişletilmiş
+        self.scales = [0.5, 0.75, 1.0] if multi_scale else [1.0]
+        
+        # Performans optimizasyonu
+        self.frame_count = 0
+        self.saliency_interval = 3  # Her 3 frame'de bir saliency hesapla
         
         # Gece/Gündüz adaptasyonu
         self.night_mode = False
@@ -163,6 +167,9 @@ class EDGSYOLOv8Detector:
         Returns:
             Tespit listesi
         """
+        # Frame count güncelle
+        self.frame_count += 1
+        
         # Gece/Gündüz tespiti
         self._detect_lighting_condition(frame)
         
@@ -206,17 +213,17 @@ class EDGSYOLOv8Detector:
             else:
                 scaled_frame = processed_frame
                 
-            # Edge-guided saliency
-            if self.enable_edgs:
+            # Edge-guided saliency (PERFORMANS: Belirli aralıklarla)
+            if self.enable_edgs and (self.frame_count % self.saliency_interval == 0):
                 saliency_map = self._compute_saliency(scaled_frame)
                 # Saliency ile görüntüyü güçlendir
                 scaled_frame = self._apply_saliency(scaled_frame, saliency_map)
                 
-            # YOLO tespiti - DENGELİ
+            # YOLO tespiti - UZAK DRONE'LAR İÇİN DÜŞÜK EŞİK
             results = self.model(
                 scaled_frame,
-                conf=self._get_adaptive_threshold() * 0.5,  # Adaptif eşiğin yarısı
-                iou=0.3,  # Normal IoU
+                conf=self._get_adaptive_threshold() * 0.3,  # Çok düşük eşik
+                iou=0.2,  # Düşük IoU (uzak nesneler için)
                 half=True if self.device.type == 'cuda' else False,
                 verbose=False,
                 agnostic_nms=True  # Sınıf farkı gözetmez
@@ -257,15 +264,22 @@ class EDGSYOLOv8Detector:
             logger.debug("Night mode detected")
             
     def _get_adaptive_threshold(self) -> float:
-        """Adaptif güven eşiği"""
+        """Adaptif güven eşiği - geliştirilmiş"""
         if not self.adaptive_threshold:
             return self.confidence_threshold
             
+        base_threshold = self.confidence_threshold
+        
         # Gece modunda daha düşük eşik
         if self.night_mode:
-            return self.confidence_threshold * 0.7
-        else:
-            return self.confidence_threshold
+            base_threshold *= 0.8  # %20 azalt
+            
+        # Hareket varsa daha düşük eşik
+        if hasattr(self, 'has_significant_motion') and self.has_significant_motion:
+            base_threshold *= 0.9  # %10 azalt
+            
+        # Minimum ve maksimum sınırlar
+        return max(0.2, min(0.5, base_threshold))
             
     def _preprocess_frame(self, frame: np.ndarray) -> np.ndarray:
         """Görüntü ön işleme - HİÇBİR ŞEY YAPMA (PERFORMANS)"""
@@ -285,6 +299,10 @@ class EDGSYOLOv8Detector:
         if motion_mask.shape[:2] != (h, w):
             motion_mask = cv2.resize(motion_mask, (w, h), interpolation=cv2.INTER_NEAREST)
         
+        # Motion mask dtype kontrolü
+        if motion_mask.dtype != np.uint8:
+            motion_mask = motion_mask.astype(np.uint8)
+            
         # Hareket olan bölgelerde iyileştirilmiş görüntüyü kullan
         if motion_mask.any():
             # Motion mask'ı 3 kanala genişlet
@@ -292,6 +310,9 @@ class EDGSYOLOv8Detector:
             
             # Hareket bölgelerinde enhanced, diğerlerinde original kullan
             result = np.where(motion_mask_3ch > 0, enhanced, original)
+            
+            # Result'ı uint8'e cast et
+            result = result.astype(np.uint8)
             
             # Edge detection ekle
             edges = cv2.Canny(cv2.cvtColor(original, cv2.COLOR_BGR2GRAY), 100, 200)
@@ -480,8 +501,8 @@ class EDGSYOLOv8Detector:
                 det['drone_score'] = drone_score
                 det['is_in_motion'] = is_in_motion
                 
-                # Güven eşiğini kontrol et
-                if combined_confidence > 0.3:  # Makul eşik
+                # Güven eşiğini kontrol et - UZAK DRONE'LAR İÇİN DÜŞÜK
+                if combined_confidence > 0.15:  # Düşük eşik
                     drone_detections.append(det)
                     
                     # Debug log

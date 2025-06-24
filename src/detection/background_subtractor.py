@@ -23,18 +23,11 @@ class BackgroundSubtractor:
         Args:
             history_length: Hareket geçmişi uzunluğu
         """
-        # MOG2 arka plan çıkarıcı
+        # MOG2 arka plan çıkarıcı (PERFORMANS İÇİN TEK SUBTRACTOR)
         self.bg_subtractor = cv2.createBackgroundSubtractorMOG2(
             detectShadows=True,
             varThreshold=16,
-            history=500
-        )
-        
-        # KNN arka plan çıkarıcı (alternatif)
-        self.knn_subtractor = cv2.createBackgroundSubtractorKNN(
-            detectShadows=True,
-            dist2Threshold=400.0,
-            history=500
+            history=300  # Daha kısa history (PERFORMANS)
         )
         
         # Frame geçmişi
@@ -70,14 +63,9 @@ class BackgroundSubtractor:
         # Blur uygula (gürültü azaltma)
         blurred = cv2.GaussianBlur(gray, (5, 5), 0)
         
-        # MOG2 ile arka plan çıkarma
-        fg_mask_mog2 = self.bg_subtractor.apply(blurred)
-        
-        # KNN ile arka plan çıkarma
-        fg_mask_knn = self.knn_subtractor.apply(blurred)
-        
-        # Maskeleri birleştir
-        combined_mask = cv2.bitwise_or(fg_mask_mog2, fg_mask_knn)
+        # MOG2 ile arka plan çıkarma (TEK SUBTRACTOR - PERFORMANS)
+        combined_mask = self.bg_subtractor.apply(blurred)
+        fg_mask_mog2 = combined_mask  # Uyumluluk için
         
         # Morfolojik işlemler
         kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
@@ -117,7 +105,6 @@ class BackgroundSubtractor:
             'motion_regions': motion_regions,
             'enhanced_frame': enhanced_frame,
             'fg_mask_mog2': fg_mask_mog2,
-            'fg_mask_knn': fg_mask_knn,
             'optical_flow_mask': optical_flow_mask
         }
         
@@ -298,12 +285,7 @@ class BackgroundSubtractor:
         self.bg_subtractor = cv2.createBackgroundSubtractorMOG2(
             detectShadows=True,
             varThreshold=16,
-            history=500
-        )
-        self.knn_subtractor = cv2.createBackgroundSubtractorKNN(
-            detectShadows=True,
-            dist2Threshold=400.0,
-            history=500
+            history=300  # Daha kısa history (PERFORMANS)
         )
         self.frame_history.clear()
         self.motion_masks.clear()

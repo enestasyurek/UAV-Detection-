@@ -85,7 +85,7 @@ class ImageEnhancer:
             
     def _enhance_night_image(self, image: np.ndarray) -> np.ndarray:
         """
-        Gece görüntüsünü iyileştir
+        Gelişmiş gece görüntüsü iyileştirme - PERFORMANS OPTİMİZE
         
         Args:
             image: Gece görüntüsü
@@ -96,33 +96,28 @@ class ImageEnhancer:
         # Kopyasını oluştur
         enhanced = image.copy()
         
-        # 1. Gürültü azaltma
-        enhanced = cv2.fastNlMeansDenoisingColored(enhanced, None, 10, 10, 7, 21)
-        
-        # 2. Kontrast iyileştirme (CLAHE)
-        # LAB renk uzayına çevir
+        # 1. LAB renk uzayında CLAHE (en etkili)
         lab = cv2.cvtColor(enhanced, cv2.COLOR_BGR2LAB)
-        
-        # L kanalını ayır (parlaklık)
         l_channel, a_channel, b_channel = cv2.split(lab)
         
-        # CLAHE uygula
-        l_channel = self.clahe.apply(l_channel)
+        # Daha agresif CLAHE parametreleri
+        night_clahe = cv2.createCLAHE(clipLimit=4.0, tileGridSize=(8, 8))
+        l_channel = night_clahe.apply(l_channel)
         
-        # Kanalları birleştir
         enhanced_lab = cv2.merge([l_channel, a_channel, b_channel])
-        
-        # BGR'ye geri çevir
         enhanced = cv2.cvtColor(enhanced_lab, cv2.COLOR_LAB2BGR)
         
-        # 3. Gamma düzeltmesi
-        enhanced = self._apply_gamma_correction(enhanced, gamma=1.5)
+        # 2. Gamma düzeltmesi (daha güçlü)
+        enhanced = self._apply_gamma_correction(enhanced, gamma=2.0)
         
-        # 4. Keskinlik artırma
-        enhanced = self._sharpen_image(enhanced, strength=0.5)
+        # 3. Basit denoise (hızlı)
+        enhanced = cv2.bilateralFilter(enhanced, 5, 50, 50)
         
-        # 5. Renk dengeleme
-        enhanced = self._color_balance(enhanced)
+        # 4. Hafif keskinleştirme
+        kernel = np.array([[-1, -1, -1],
+                          [-1,  9, -1],
+                          [-1, -1, -1]]) / 9.0
+        enhanced = cv2.filter2D(enhanced, -1, kernel)
         
         return enhanced
         

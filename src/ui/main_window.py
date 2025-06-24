@@ -51,14 +51,14 @@ class DroneTrackingApp:
         self.is_running = False
         self.frame_queue = queue.Queue(maxsize=10)
         self.video_fps = 30  # Varsayılan FPS
-        self.process_every_n_frames = 1  # Her frame'i işle
+        self.process_every_n_frames = 2  # Her 2. frame'i işle (PERFORMANS)
         
         # Modüller - EDGS-YOLOv8 detector kullan
         self.detector = EDGSYOLOv8Detector(
-            confidence_threshold=0.25,  # Dengeli başlangıç - %25
+            confidence_threshold=0.15,  # Uzak drone'lar için düşük eşik
             use_gpu=True,
             enable_edgs=True,  # Drone tespiti için AÇIK
-            multi_scale=False  # Performans için kapalı başlat
+            multi_scale=True  # Uzak drone'lar için açık
         )
         # GPU ısınması
         self.detector.warmup()
@@ -715,9 +715,9 @@ class DroneTrackingApp:
         except queue.Empty:
             pass
             
-        # Devam et - daha hızlı güncelleme
+        # Devam et - optimize edilmiş güncelleme
         if self.is_running:
-            self.root.after(16, self._update_display)  # ~60 FPS hedef
+            self.root.after(33, self._update_display)  # 30 FPS hedef (PERFORMANS)
             
     def _draw_tracks(self, frame: np.ndarray, detections: List[Dict]) -> np.ndarray:
         """Takip çizgilerini çiz"""
@@ -837,12 +837,22 @@ class DroneTrackingApp:
                     speed_info = f"{det.get('speed_estimate', 0):.1f} px/f"
                     alt_info = f"{det.get('altitude_estimate', 0):.1f}m"
                     
+                    # Nesne tipini belirle
+                    aerial_class = det.get('aerial_class', det.get('class', 'unknown'))
+                    display_name = {
+                        'drone': 'DRONE',
+                        'airplane': 'AIRPLANE',
+                        'helicopter': 'HELICOPTER',
+                        'bird': 'BIRD',
+                        'unknown': 'UNKNOWN'
+                    }.get(aerial_class.lower(), aerial_class.upper())
+                    
                     self.detection_tree.insert(
                         "",
                         "end",
                         values=(
                             det['track_id'],
-                            det['class'],
+                            display_name,
                             f"{det['confidence']:.2f}",
                             det.get('age', 0)
                         ),
@@ -850,12 +860,22 @@ class DroneTrackingApp:
                     )
                 else:
                     # Diğer takip algoritmaları için standart
+                    # Nesne tipini belirle
+                    aerial_class = det.get('aerial_class', det.get('class', 'unknown'))
+                    display_name = {
+                        'drone': 'DRONE',
+                        'airplane': 'AIRPLANE',
+                        'helicopter': 'HELICOPTER',
+                        'bird': 'BIRD',
+                        'unknown': 'UNKNOWN'
+                    }.get(aerial_class.lower(), aerial_class.upper())
+                    
                     self.detection_tree.insert(
                         "",
                         "end",
                         values=(
                             det['track_id'],
-                            det['class'],
+                            display_name,
                             f"{det['confidence']:.2f}",
                             det.get('age', 0)
                         )

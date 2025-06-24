@@ -31,17 +31,17 @@ class AerialObjectClassifier:
         # Sınıf özellikleri
         self.class_features = {
             'drone': {
-                'size_range': (20, 20000),  # piksel²
-                'speed_range': (0, 100),  # piksel/frame
+                'size_range': (10, 50000),  # Daha geniş aralık (uzak drone'lar için)
+                'speed_range': (0, 150),  # piksel/frame
                 'hover_capability': True,
                 'altitude_preference': 'low_to_medium',
-                'aspect_ratio_range': (0.5, 2.0),
-                'motion_smoothness': 0.7,
-                'size_stability': 0.85,
+                'aspect_ratio_range': (0.3, 3.0),  # Daha geniş
+                'motion_smoothness': 0.6,  # Daha toleranslı
+                'size_stability': 0.7,  # Daha toleranslı
                 'typical_frequency': (50, 500),  # Hz - pervane dönüşü
                 'night_lights': True,  # LED ışıkları
-                'edge_sharpness': 0.8,
-                'symmetry_score': 0.8
+                'edge_sharpness': 0.6,  # Uzak drone'lar için düşük
+                'symmetry_score': 0.6  # Uzak drone'lar için düşük
             },
             'airplane': {
                 'size_range': (5000, 100000),  # piksel²
@@ -89,7 +89,7 @@ class AerialObjectClassifier:
         self.night_detection_threshold = 60  # Ortalama parlaklık
         
         # Drone tespit hassasiyeti
-        self.drone_sensitivity = 0.95  # Çok yüksek hassasiyet
+        self.drone_sensitivity = 1.2  # Maksimum hassasiyet (uzak drone'lar için)
         
     def classify(self, frame: np.ndarray, detection: Dict, 
                  track_id: Optional[str] = None) -> Tuple[str, float, Dict]:
@@ -541,7 +541,7 @@ class AerialObjectClassifier:
         score = 0.0
         weight_sum = 0.0
         
-        # Boyut uyumu
+        # Boyut uyumu - DRONE İÇİN DAHA TOLERANSLI
         if 'avg_size' in features:
             size_min, size_max = class_info['size_range']
             if size_min <= features['avg_size'] <= size_max:
@@ -549,7 +549,11 @@ class AerialObjectClassifier:
             else:
                 # Uzaklığa göre azalan skor
                 if features['avg_size'] < size_min:
-                    size_score = features['avg_size'] / size_min
+                    # Drone için daha toleranslı (küçük nesneler)
+                    if class_name == 'drone':
+                        size_score = 0.7  # Minimum skor
+                    else:
+                        size_score = features['avg_size'] / size_min
                 else:
                     size_score = size_max / features['avg_size']
             score += size_score * 0.20
