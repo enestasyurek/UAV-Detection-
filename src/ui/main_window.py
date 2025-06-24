@@ -48,32 +48,70 @@ class DroneTrackingApp:
             self.root.geometry("1280x720")
             self.root.minsize(1024, 600)
             
-            # macOS için native görünüm
+            # macOS pencere özellikleri - basit yaklaşım
+            self.root.configure(bg="#f5f5f5")
+            
+            # macOS için tema - debug ile
+            style = ttk.Style()
             try:
-                # macOS için aqua teması kullan
-                style = ttk.Style()
-                style.theme_use('aqua')
-            except:
-                # Aqua mevcut değilse default kullan
+                # Önce mevcut temaları kontrol et
+                available_themes = style.theme_names()
+                print(f"Mevcut temalar: {available_themes}")
+                
+                if 'aqua' in available_themes:
+                    style.theme_use('aqua')
+                    print("Aqua teması kullanılıyor")
+                elif 'clam' in available_themes:
+                    style.theme_use('clam')
+                    print("Clam teması kullanılıyor")
+                else:
+                    style.theme_use('default')
+                    print("Default tema kullanılıyor")
+            except Exception as e:
+                print(f"Tema ayarlanamadı: {e}")
                 style = ttk.Style()
                 style.theme_use('default')
                 
-            # macOS için font ayarları
-            import tkinter.font as tkFont
-            default_font = tkFont.nametofont("TkDefaultFont")
-            default_font.configure(family="SF Pro Text", size=13)
-            
-            text_font = tkFont.nametofont("TkTextFont")
-            text_font.configure(family="SF Mono", size=12)
-            
-            # Retina display desteği
+            # macOS için font ayarları - güvenli yaklaşım
             try:
-                self.root.tk.call('tk', 'scaling', 2.0)
-            except:
-                pass
+                import tkinter.font as tkFont
+                # Sistem fontlarını kontrol et
+                available_fonts = list(tkFont.families())
+                print(f"Sistem fontları sayısı: {len(available_fonts)}")
                 
-            # macOS pencere özellikleri
-            self.root.configure(bg="#f5f5f5")
+                if "SF Pro Text" in available_fonts:
+                    default_font = tkFont.nametofont("TkDefaultFont")
+                    default_font.configure(family="SF Pro Text", size=13)
+                    print("SF Pro Text font ayarlandı")
+                elif "Helvetica" in available_fonts:
+                    default_font = tkFont.nametofont("TkDefaultFont")
+                    default_font.configure(family="Helvetica", size=13)
+                    print("Helvetica font ayarlandı")
+                    
+                if "SF Mono" in available_fonts:
+                    text_font = tkFont.nametofont("TkTextFont")
+                    text_font.configure(family="SF Mono", size=12)
+                    print("SF Mono font ayarlandı")
+                elif "Monaco" in available_fonts:
+                    text_font = tkFont.nametofont("TkTextFont")
+                    text_font.configure(family="Monaco", size=12)
+                    print("Monaco font ayarlandı")
+                    
+            except Exception as e:
+                print(f"Font ayarlanamadı: {e}")
+            
+            # Retina display desteği - daha dikkatli
+            try:
+                # Mevcut scaling değerini al
+                current_scaling = self.root.tk.call('tk', 'scaling')
+                print(f"Mevcut scaling: {current_scaling}")
+                
+                # Eğer çok düşükse artır - ama aşırı artırma
+                if current_scaling < 1.2:
+                    self.root.tk.call('tk', 'scaling', 1.3)
+                    print("Scaling 1.3'e ayarlandı")
+            except Exception as e:
+                print(f"Scaling ayarlanamadı: {e}")
             
         else:
             # Diğer platformlar için
@@ -113,17 +151,30 @@ class DroneTrackingApp:
         self.track_count = 0
         
         # UI oluştur
+        print("UI oluşturuluyor...")
         self._create_ui()
+        print("UI oluşturuldu!")
         
         # Takip algoritmasını başlat
+        print("Tracker başlatılıyor...")
         self._init_tracker()
+        print("Tracker başlatıldı!")
+        
+        # macOS için ek debug
+        if self.is_mac:
+            self.root.update_idletasks()
+            print(f"Pencere boyutu: {self.root.winfo_width()}x{self.root.winfo_height()}")
+            print(f"Pencere görünür: {self.root.winfo_viewable()}")
         
     def _create_ui(self):
         """Kullanıcı arayüzünü oluştur"""
+        print("_create_ui başladı")
+        
         # Ana çerçeve - macOS için optimize edilmiş
         padding = 15 if self.is_mac else 10
         main_frame = ttk.Frame(self.root)
         main_frame.pack(fill=tk.BOTH, expand=True, padx=padding, pady=padding)
+        print(f"Main frame oluşturuldu, padding: {padding}")
         
         # macOS için grid weights ayarla
         if self.is_mac:
@@ -131,22 +182,40 @@ class DroneTrackingApp:
             main_frame.grid_columnconfigure(1, weight=1)              # Video panel
             main_frame.grid_columnconfigure(2, weight=0, minsize=280) # Bilgi panel
             main_frame.grid_rowconfigure(0, weight=1)
+            print("macOS grid weights ayarlandı")
         else:
             # Diğer platformlar için varsayılan
             main_frame.grid_columnconfigure(1, weight=1)
             main_frame.grid_rowconfigure(0, weight=1)
+            print("Standart grid weights ayarlandı")
         
         # Sol panel (kontroller)
+        print("Kontrol paneli oluşturuluyor...")
         self._create_control_panel(main_frame)
+        print("Kontrol paneli oluşturuldu")
         
         # Orta panel (video)
+        print("Video paneli oluşturuluyor...")
         self._create_video_panel(main_frame)
+        print("Video paneli oluşturuldu")
         
         # Sağ panel (bilgi)
+        print("Bilgi paneli oluşturuluyor...")
         self._create_info_panel(main_frame)
+        print("Bilgi paneli oluşturuldu")
         
         # Alt panel (durum çubuğu)
+        print("Durum çubuğu oluşturuluyor...")
         self._create_status_bar()
+        print("Durum çubuğu oluşturuldu")
+        
+        # macOS için force update
+        if self.is_mac:
+            self.root.update_idletasks()
+            main_frame.update_idletasks()
+            print("macOS force update yapıldı")
+            
+        print("_create_ui tamamlandı")
         
     def _create_control_panel(self, parent):
         """Kontrol panelini oluştur"""
