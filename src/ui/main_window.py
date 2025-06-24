@@ -38,12 +38,49 @@ class DroneTrackingApp:
         # Ana pencere referansı
         self.root = root
         self.root.title("Drone Tespit ve Takip Sistemi")
-        self.root.geometry("1400x800")
         
-        # Tema ayarları
-        self.root.configure(bg="#f0f0f0")
-        style = ttk.Style()
-        style.theme_use('clam')
+        # macOS optimizasyonları
+        import platform
+        self.is_mac = platform.system() == 'Darwin'
+        
+        if self.is_mac:
+            # macOS için optimize edilmiş pencere boyutu ve ayarları
+            self.root.geometry("1280x720")
+            self.root.minsize(1024, 600)
+            
+            # macOS için native görünüm
+            try:
+                # macOS için aqua teması kullan
+                style = ttk.Style()
+                style.theme_use('aqua')
+            except:
+                # Aqua mevcut değilse default kullan
+                style = ttk.Style()
+                style.theme_use('default')
+                
+            # macOS için font ayarları
+            import tkinter.font as tkFont
+            default_font = tkFont.nametofont("TkDefaultFont")
+            default_font.configure(family="SF Pro Text", size=13)
+            
+            text_font = tkFont.nametofont("TkTextFont")
+            text_font.configure(family="SF Mono", size=12)
+            
+            # Retina display desteği
+            try:
+                self.root.tk.call('tk', 'scaling', 2.0)
+            except:
+                pass
+                
+            # macOS pencere özellikleri
+            self.root.configure(bg="#f5f5f5")
+            
+        else:
+            # Diğer platformlar için
+            self.root.geometry("1400x800")
+            self.root.configure(bg="#f0f0f0")
+            style = ttk.Style()
+            style.theme_use('clam')
         
         # Değişkenler
         self.video_source = None
@@ -83,9 +120,21 @@ class DroneTrackingApp:
         
     def _create_ui(self):
         """Kullanıcı arayüzünü oluştur"""
-        # Ana çerçeve
+        # Ana çerçeve - macOS için optimize edilmiş
+        padding = 15 if self.is_mac else 10
         main_frame = ttk.Frame(self.root)
-        main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        main_frame.pack(fill=tk.BOTH, expand=True, padx=padding, pady=padding)
+        
+        # macOS için grid weights ayarla
+        if self.is_mac:
+            main_frame.grid_columnconfigure(0, weight=0, minsize=220)  # Sol panel
+            main_frame.grid_columnconfigure(1, weight=1)              # Video panel
+            main_frame.grid_columnconfigure(2, weight=0, minsize=280) # Bilgi panel
+            main_frame.grid_rowconfigure(0, weight=1)
+        else:
+            # Diğer platformlar için varsayılan
+            main_frame.grid_columnconfigure(1, weight=1)
+            main_frame.grid_rowconfigure(0, weight=1)
         
         # Sol panel (kontroller)
         self._create_control_panel(main_frame)
@@ -101,9 +150,14 @@ class DroneTrackingApp:
         
     def _create_control_panel(self, parent):
         """Kontrol panelini oluştur"""
-        # Kontrol çerçevesi
-        control_frame = ttk.LabelFrame(parent, text="Kontroller", padding=10)
+        # Kontrol çerçevesi - macOS için optimize edilmiş
+        padding = 15 if self.is_mac else 10
+        control_frame = ttk.LabelFrame(parent, text="Kontroller", padding=padding)
         control_frame.grid(row=0, column=0, sticky="nsew", padx=(0, 10))
+        
+        # macOS için column genişliği ayarla
+        if self.is_mac:
+            control_frame.grid_columnconfigure(0, weight=1, minsize=200)
         
         # Kaynak seçimi
         ttk.Label(control_frame, text="Video Kaynağı:").grid(row=0, column=0, sticky="w", pady=5)
@@ -225,9 +279,19 @@ class DroneTrackingApp:
         video_frame = ttk.LabelFrame(parent, text="Video Görüntüsü", padding=10)
         video_frame.grid(row=0, column=1, sticky="nsew")
         
-        # Video canvas
-        self.video_canvas = tk.Canvas(video_frame, width=800, height=600, bg="black")
+        # Video canvas - macOS için optimize edilmiş
+        if self.is_mac:
+            # macOS için Retina-ready canvas boyutları
+            canvas_width, canvas_height = 720, 540
+        else:
+            canvas_width, canvas_height = 800, 600
+            
+        self.video_canvas = tk.Canvas(video_frame, width=canvas_width, height=canvas_height, bg="black")
         self.video_canvas.pack(fill=tk.BOTH, expand=True)
+        
+        # macOS için smooth scrolling
+        if self.is_mac:
+            self.video_canvas.configure(highlightthickness=0)
         
         # Video kontrolleri
         controls_frame = ttk.Frame(video_frame)
@@ -279,19 +343,27 @@ class DroneTrackingApp:
         info_frame = ttk.LabelFrame(parent, text="İstatistikler", padding=10)
         info_frame.grid(row=0, column=2, sticky="nsew", padx=(10, 0))
         
+        # Font ayarları - macOS için optimize edilmiş
+        if self.is_mac:
+            label_font = ("SF Pro Text", 12)
+            value_font = ("SF Pro Display", 16, "bold")
+        else:
+            label_font = ("Arial", 10)
+            value_font = ("Arial", 14, "bold")
+        
         # FPS göstergesi
-        ttk.Label(info_frame, text="FPS:").grid(row=0, column=0, sticky="w", pady=5)
-        self.fps_label = ttk.Label(info_frame, text="0", font=("Arial", 14, "bold"))
+        ttk.Label(info_frame, text="FPS:", font=label_font).grid(row=0, column=0, sticky="w", pady=5)
+        self.fps_label = ttk.Label(info_frame, text="0", font=value_font)
         self.fps_label.grid(row=0, column=1, sticky="e", pady=5)
         
         # Tespit sayısı
-        ttk.Label(info_frame, text="Tespitler:").grid(row=1, column=0, sticky="w", pady=5)
-        self.detection_label = ttk.Label(info_frame, text="0", font=("Arial", 14, "bold"))
+        ttk.Label(info_frame, text="Tespitler:", font=label_font).grid(row=1, column=0, sticky="w", pady=5)
+        self.detection_label = ttk.Label(info_frame, text="0", font=value_font)
         self.detection_label.grid(row=1, column=1, sticky="e", pady=5)
         
         # Takip sayısı
-        ttk.Label(info_frame, text="Aktif Takipler:").grid(row=2, column=0, sticky="w", pady=5)
-        self.track_label = ttk.Label(info_frame, text="0", font=("Arial", 14, "bold"))
+        ttk.Label(info_frame, text="Aktif Takipler:", font=label_font).grid(row=2, column=0, sticky="w", pady=5)
+        self.track_label = ttk.Label(info_frame, text="0", font=value_font)
         self.track_label.grid(row=2, column=1, sticky="e", pady=5)
         
         # Ayırıcı
@@ -308,14 +380,20 @@ class DroneTrackingApp:
         scrollbar = ttk.Scrollbar(tree_frame)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         
-        # Treeview
+        # Treeview - macOS için optimize edilmiş
+        tree_height = 8 if self.is_mac else 10
         self.detection_tree = ttk.Treeview(
             tree_frame,
             columns=("ID", "Sınıf", "Güven", "Yaş"),
             show="headings",
-            height=10,
+            height=tree_height,
             yscrollcommand=scrollbar.set
         )
+        
+        # macOS için alternating row colors
+        if self.is_mac:
+            self.detection_tree.tag_configure('oddrow', background='#f8f8f8')
+            self.detection_tree.tag_configure('evenrow', background='#ffffff')
         
         # Sütun başlıkları
         self.detection_tree.heading("ID", text="Takip ID")
@@ -323,11 +401,17 @@ class DroneTrackingApp:
         self.detection_tree.heading("Güven", text="Güven")
         self.detection_tree.heading("Yaş", text="Yaş")
         
-        # Sütun genişlikleri
-        self.detection_tree.column("ID", width=80)
-        self.detection_tree.column("Sınıf", width=80)
-        self.detection_tree.column("Güven", width=60)
-        self.detection_tree.column("Yaş", width=50)
+        # macOS için optimize edilmiş sütun genişlikleri
+        if self.is_mac:
+            self.detection_tree.column("ID", width=90)
+            self.detection_tree.column("Sınıf", width=100)
+            self.detection_tree.column("Güven", width=80)
+            self.detection_tree.column("Yaş", width=60)
+        else:
+            self.detection_tree.column("ID", width=80)
+            self.detection_tree.column("Sınıf", width=80)
+            self.detection_tree.column("Güven", width=60)
+            self.detection_tree.column("Yaş", width=50)
         
         self.detection_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         scrollbar.config(command=self.detection_tree.yview)
@@ -686,21 +770,32 @@ class DroneTrackingApp:
             canvas_height = self.video_canvas.winfo_height()
             
             if canvas_width > 1 and canvas_height > 1:
-                # Daha hızlı resize için INTER_NEAREST kullan
+                # macOS için daha iyi interpolation
+                interpolation = cv2.INTER_LINEAR if self.is_mac else cv2.INTER_NEAREST
+                
                 h, w = frame.shape[:2]
                 scale = min(canvas_width/w, canvas_height/h) * 0.9  # %90 ölçek
                 new_width = int(w * scale)
                 new_height = int(h * scale)
                 
-                # Hızlı resize
-                frame = cv2.resize(frame, (new_width, new_height), interpolation=cv2.INTER_NEAREST)
+                # Resize - macOS için daha iyi kalite
+                frame = cv2.resize(frame, (new_width, new_height), interpolation=interpolation)
                 
                 # BGR'den RGB'ye çevir
                 frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                 
                 # PIL Image'e çevir
                 image = Image.fromarray(frame_rgb)
-                photo = ImageTk.PhotoImage(image)
+                
+                # macOS Retina display desteği
+                if self.is_mac:
+                    try:
+                        # Retina için yüksek çözünürlük
+                        photo = ImageTk.PhotoImage(image)
+                    except:
+                        photo = ImageTk.PhotoImage(image)
+                else:
+                    photo = ImageTk.PhotoImage(image)
                 
                 # Canvas'ı güncelle
                 self.video_canvas.delete("all")
@@ -715,9 +810,11 @@ class DroneTrackingApp:
         except queue.Empty:
             pass
             
-        # Devam et - optimize edilmiş güncelleme
+        # Devam et - macOS için optimize edilmiş güncelleme
         if self.is_running:
-            self.root.after(33, self._update_display)  # 30 FPS hedef (PERFORMANS)
+            # macOS için daha düşük refresh rate (performance)
+            refresh_rate = 50 if self.is_mac else 33  # 20 FPS vs 30 FPS
+            self.root.after(refresh_rate, self._update_display)
             
     def _draw_tracks(self, frame: np.ndarray, detections: List[Dict]) -> np.ndarray:
         """Takip çizgilerini çiz"""
@@ -926,6 +1023,18 @@ class DroneTrackingApp:
         """Uygulamayı çalıştır"""
         # Pencere kapatma eventi
         self.root.protocol("WM_DELETE_WINDOW", self._on_closing)
+        
+        # macOS için ek optimizasyonlar
+        if self.is_mac:
+            # macOS için app focus handling
+            self.root.lift()
+            self.root.attributes('-topmost', False)
+            
+            # macOS için window state
+            try:
+                self.root.state('normal')
+            except:
+                pass
         
         # Ana döngü
         self.root.mainloop()

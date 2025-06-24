@@ -15,6 +15,7 @@ Bu proje, YOLO v11 kullanarak drone tespiti ve modern takip algoritmaları (Byte
   - Takip güvenilirlik skoru
 - ByteTrack, DeepSort ve OCSort takip algoritmaları
 - Video ve canlı kamera akışı desteği
+- **macOS optimize edilmiş UI** - Retina display ve native görünüm desteği
 - Kullanıcı dostu arayüz
 - **GPU optimizasyonları** ile yüksek performans
 
@@ -35,9 +36,14 @@ pip install -r requirements.txt
 run.bat
 ```
 
-**Linux/Mac:**
+**Linux:**
 ```bash
 ./run.sh
+```
+
+**macOS:**
+```bash
+./run_mac.sh
 ```
 
 ### Performans İpuçları:
